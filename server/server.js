@@ -1381,6 +1381,14 @@ function isLoopback(req) {
   const a = req.socket.remoteAddress || '';
   return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
 }
+// Bloqueia DNS rebinding e páginas de outros sites: Host e Origin precisam ser o próprio endereço local.
+function isLocalRequest(req) {
+  const local = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i;
+  const host = String(req.headers.host || '');
+  if (!isLoopback(req) || !local.test(host)) return false;
+  const origin = req.headers.origin;
+  return !origin || String(origin).toLowerCase() === 'http://' + host.toLowerCase();
+}
 function send(res, code, obj) {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(obj));
@@ -1426,7 +1434,7 @@ async function api(req, res, url) {
     return send(res, 200, { token: config.token });
   }
   if (p === '/api/local-token') {
-    if (!isLoopback(req)) return send(res, 403, { error: 'Só no próprio PC.' });
+    if (!isLocalRequest(req)) return send(res, 403, { error: 'Só no próprio PC.' });
     return send(res, 200, { token: config.token, pairCode, addresses: lanAddresses(), port: config.port });
   }
   if (!authed(req)) return send(res, 401, { error: 'Não autorizado. Pareie o dispositivo.' });
