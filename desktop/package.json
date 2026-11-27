@@ -1,0 +1,36 @@
+{
+  "name": "agy-remote-desktop",
+  "productName": "Agy Remote",
+  "version": "1.0.0",
+  "description": "Agy Remote: controle o Antigravity do PC pelo celular",
+  "main": "main.js",
+  "author": "Augusto",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "icon": "node scripts/make-icon.js",
+    "dist": "node scripts/make-icon.js && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.agyremote.desktop",
+    "productName": "Agy Remote",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "package.json", "build/icon.png"],
+    "extraResources": [
+      { "from": "../server", "to": "server", "filter": ["**/*", "!data/**"] },
+      { "from": "../AgyRemote.apk", "to": "AgyRemote.apk" }
+    ],
+    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Agy Remote"
+    }
+  }
+}

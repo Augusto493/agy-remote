@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{margin:0;background:#000000;color:#f5f5f5;font:16px/1.5 system-ui,Roboto,sans-serif;padding:32px 20px}
+h1{font-size:24px;margin:24px 0 4px}
+p{color:#a3a3a3}
+input{width:100%;box-sizing:border-box;font:inherit;font-size:17px;padding:14px;border-radius:12px;border:1px solid #333333;background:#121212;color:#f5f5f5;margin:12px 0}
+button{width:100%;padding:14px;border:0;border-radius:12px;background:#f5f5f5;color:#000000;font:inherit;font-weight:700}
+.err{background:#4a2a22;border:1px solid #c0392b;border-radius:12px;padding:12px;color:#f3c7bd;font-size:14px}
+ol{color:#a3a3a3;padding-left:1.2em;font-size:14px}
+.logo{width:56px;height:56px;border-radius:50%;background:#f5f5f5;display:grid;place-items:center;font-size:28px;color:#000000}
+</style>
+</head>
+<body>
+<div class="logo">✦</div>
+<h1>Agy Remote</h1>
+<p>Controle o Antigravity do seu PC pelo celular.</p>
+<div id="err" class="err" hidden></div>
+<input id="url" placeholder="192.168.0.10:8790" inputmode="url" autocapitalize="off" autocorrect="off">
+<button id="go">Conectar</button>
+<ol>
+  <li>No PC, abra <b>Iniciar Agy Remote</b>.</li>
+  <li>Digite aqui o endereço "No celular" que aparece na janela.</li>
+  <li>Depois digite o código de 6 dígitos para parear.</li>
+  <li>Fora de casa: instale o Tailscale no PC e no celular e use o endereço 100.x.</li>
+</ol>
+<script>
+const q = new URLSearchParams(location.search);
+const u = document.getElementById('url'), e = document.getElementById('err');
+u.value = (q.get('u') || '').replace(/^https?:\/\//, '');
+if (q.get('e')) { e.textContent = q.get('e'); e.hidden = false; }
+const go = () => { if (u.value.trim()) AgyHost.saveServer(u.value.trim()); };
+document.getElementById('go').onclick = go;
+u.onkeydown = (ev) => { if (ev.key === 'Enter') go(); };
+</script>
+</body>
+</html>
