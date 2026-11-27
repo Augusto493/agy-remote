@@ -60,7 +60,7 @@
     built: false, missions: [], loaded: false, strengths: {}, filter: 'todas', q: '', fEng: '', sel: ls.get('sel', null), mission: null,
     view: ls.get('board', 'grafo'), panel: null, openCards: new Set(), approve: {}, listAt: 0, detAt: 0, statsAt: 0,
     cache: {}, testing: {}, busy: false, carousel: 1,
-    opts: Object.assign({ cwd: '', engines: [], lead: '', parallel: 2, verify: true, maxFix: 2, skip: true, approve: false, browser: false, cheap: true, isolate: true, autoApply: false, maxTokens: 3000000 }, ls.get('opts', {})),
+    opts: Object.assign({ cwd: '', engines: [], lead: '', parallel: 2, verify: true, maxFix: 2, skip: false, approve: false, browser: false, cheap: true, isolate: true, autoApply: false, maxTokens: 3000000 }, ls.get('opts', {})),
   };
   const saveOpts = () => ls.set('opts', S.opts);
   const E = (s) => (typeof esc === 'function' ? esc(s) : String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
@@ -222,7 +222,7 @@
     ].join('');
     Q('#osWarn').textContent = o.skip
       ? '⚠️ Comandos liberados: as IAs instalam pacotes e rodam testes sem perguntar. Use em pastas de projeto.'
-      : 'Comandos bloqueados: as IAs só editam arquivos; testes que precisam do terminal podem falhar.';
+      : 'Sem liberar comandos: o que fica bloqueado depende de cada IA (o Codex no Windows roda sem sandbox mesmo assim).';
     Q('#osWarn').classList.toggle('on', !!o.skip);
     Q('#osPCwd').onclick = pickCwd;
     Q('#osPTeam').onclick = pickTeam;
@@ -1038,7 +1038,7 @@
     const f = {
       name: base.name || '', kind: base.kind || 'mission', goal: base.goal || '', cwd: base.cwd || S.opts.cwd || ws[0] || '',
       engines: (base.engines && base.engines.length ? base.engines : S.opts.engines).slice(), lead: base.lead || S.opts.lead,
-      cheap: base.cheap !== false, skip: base.skip !== false,
+      cheap: base.cheap !== false, skip: base.skip === true,
       schedule: JSON.parse(JSON.stringify(base.schedule || { type: 'daily', time: '09:00', days: [0, 1, 2, 3, 4, 5, 6] })),
     };
     const draw = (ov) => {
@@ -1051,7 +1051,7 @@
         <label class="os-fl"><span>Pasta</span><input id="afCwd" class="mono" list="afCwdL" value="${E(f.cwd)}" placeholder="C:\\caminho\\do\\projeto"><datalist id="afCwdL">${ws.map((w) => `<option value="${E(w)}">`).join('')}</datalist></label>
         <div class="os-fl"><span>${f.kind === 'prompt' ? 'IA' : 'Equipe'}</span><div class="os-row" style="flex-wrap:wrap">${on.map((id) => `<button class="chip toggle ${(f.kind === 'prompt' ? f.lead === id : f.engines.includes(id)) ? 'on' : ''}" data-ae="${id}">${engDot(id)} ${E(engShort(id))}</button>`).join('') || '<span class="muted">Nenhuma IA ligada</span>'}</div></div>
         <div class="engrow" style="padding:4px 0"><div class="tx"><b>💸 Econômico</b><span>Usa o modelo mais barato de cada IA</span></div><label class="sw"><input type="checkbox" id="afCheap" ${f.cheap ? 'checked' : ''}><i></i></label></div>
-        <div class="engrow" style="padding:4px 0"><div class="tx"><b>🔓 Liberar comandos</b><span>Sem ninguém olhando, as IAs precisam rodar testes sem pedir permissão</span></div><label class="sw"><input type="checkbox" id="afSkip" ${f.skip ? 'checked' : ''}><i></i></label></div>
+        <div class="engrow" style="padding:4px 0"><div class="tx"><b>🔓 Liberar comandos</b><span>As IAs rodam comandos sem pedir permissão, sem ninguém olhando. Desligado, tarefas que precisam do terminal podem falhar</span></div><label class="sw"><input type="checkbox" id="afSkip" ${f.skip ? 'checked' : ''}><i></i></label></div>
         <div class="os-fl"><span>Agenda</span><div class="os-row" style="flex-wrap:wrap">
           <button class="chip" data-ap="hour">A cada hora</button><button class="chip" data-ap="day9">Todo dia às 09:00</button><button class="chip" data-ap="wk18">Dias úteis às 18:00</button><button class="chip" data-ap="once">Uma vez em…</button></div></div>
         <div class="seg" style="margin:0"><button data-at="interval" class="${s.type === 'interval' ? 'on' : ''}">Intervalo</button><button data-at="daily" class="${s.type === 'daily' ? 'on' : ''}">Diária</button><button data-at="once" class="${s.type === 'once' ? 'on' : ''}">Uma vez</button></div>

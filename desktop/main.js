@@ -64,7 +64,7 @@ function errorPage(err) {
   const busy = err.code === 'EADDRINUSE';
   return `<body style="background:#1c1b19;color:#ece8e1;font:15px system-ui;padding:40px">
     <h2>Não consegui iniciar o servidor</h2>
-    <p>${busy ? 'A porta 8790 já está em uso — provavelmente o "Iniciar Agy Remote.cmd" está aberto. Feche aquela janela e abra o programa de novo.' : String(err.message)}</p></body>`;
+    <p>${busy ? 'A porta 8790 já está em uso — provavelmente há outro servidor do Agy Remote aberto. Feche-o e abra o programa de novo.' : String(err.message)}</p></body>`;
 }
 
 function showWindow(js) {
@@ -75,6 +75,28 @@ function showWindow(js) {
 }
 
 function fmtTok(n) { n = n || 0; return n >= 1e6 ? (n / 1e6).toFixed(1) + ' mi' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n); }
+
+function showPhoneHelp(configFile) {
+  dialog.showMessageBox({
+    type: 'info', title: 'Agy Remote', message: 'Ligar o acesso pelo celular',
+    detail: `1. Abra o arquivo ${configFile}\n2. Troque "lan": false por "lan": true\n3. Saia pelo ícone da bandeja e abra o Agy Remote de novo\n(ou defina a variável de ambiente AGY_REMOTE_LAN=1).\n\nA conexão é HTTP sem criptografia: use só em rede de confiança ou pelo Tailscale.`,
+    buttons: ['Abrir pasta de dados', 'Fechar'], defaultId: 1, cancelId: 1,
+  }).then((r) => { if (r.response === 0) shell.openPath(dataDir); });
+}
+
+async function revokeDevices() {
+  const r = await dialog.showMessageBox({
+    type: 'warning', title: 'Agy Remote', message: 'Revogar todos os aparelhos?',
+    detail: 'Um novo token é gerado. Todo celular ou navegador pareado precisa parear de novo.',
+    buttons: ['Revogar', 'Cancelar'], defaultId: 1, cancelId: 1,
+  });
+  if (r.response !== 0) return;
+  server.regenerateToken();
+  if (mini && !mini.isDestroyed()) mini.close();
+  // a janela do PC esquece o token antigo e pega o novo ao recarregar
+  if (win && !win.isDestroyed()) win.webContents.executeJavaScript("LS.set('token', ''); location.reload()").catch(() => {});
+  buildTray();
+}
 
 function buildTray() {
   const info = server && !serverError ? server.info() : null;
@@ -87,8 +109,10 @@ function buildTray() {
     { type: 'separator' },
     ...(info ? [
       { label: `Código de pareamento: ${info.pairCode}`, click: () => clipboard.writeText(info.pairCode) },
+      ...(info.lan ? [] : [{ label: 'Acesso pelo celular desligado — como ligar…', click: () => showPhoneHelp(info.configFile) }]),
       ...(addr ? [{ label: `Endereço p/ celular: ${addr.replace('http://', '')}`, click: () => clipboard.writeText(addr) }] : []),
       { label: 'Conectar celular…', click: () => showWindow("go('settings')") },
+      { label: 'Revogar aparelhos (gerar novo token)…', click: () => revokeDevices() },
       { type: 'separator' },
       ...(() => {
         let act = [];
@@ -124,12 +148,16 @@ app.whenReady().then(async () => {
     server.events.once('error', (err) => { serverError = err; resolve(); });
   });
 
-  tray = new Tray(nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }));
+  // build/icon.png não vai no repositório: sem ele, usa o ícone do executável para a bandeja não ficar invisível
+  let trayIcon = nativeImage.createFromPath(ICON);
+  if (trayIcon.isEmpty()) trayIcon = await app.getFileIcon(process.execPath);
+  tray = new Tray(trayIcon.resize({ width: 16, height: 16 }));
   tray.on('click', () => showWindow());
   buildTray();
   setInterval(buildTray, 30000);
 
   server.events.on('run-start', () => buildTray());
+  server.events.on('pair-code', () => buildTray());
   server.events.on('run-done', (r) => {
     buildTray();
     const focused = win && win.isVisible() && win.isFocused();

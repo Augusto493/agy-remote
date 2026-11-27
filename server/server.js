@@ -9,6 +9,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 const { EventEmitter } = require('events');
+const { lanEnabled, isTrustedHost, isSameOrigin, createPairLimiter } = require('./security');
 
 const ROOT = __dirname;
 // O app desktop define AGY_REMOTE_DATA (pasta de dados do usuário); rodando solto, usa ./data
@@ -40,8 +41,19 @@ const config = Object.assign({
   token: crypto.randomBytes(24).toString('hex'),
   workspaces: [HOME],
   agyPath: '',
+  lan: false, // true = aceita conexões de outros aparelhos (celular) por HTTP
 }, loadJson(CONFIG_FILE, {}));
 saveJson(CONFIG_FILE, config);
+const LAN = lanEnabled(process.env, config);
+
+const newToken = () => crypto.randomBytes(24).toString('hex');
+// `node server.js --reset-token`: revoga todos os aparelhos pareados e sai (feche o servidor antes).
+if (require.main === module && process.argv.includes('--reset-token')) {
+  config.token = newToken();
+  saveJson(CONFIG_FILE, config);
+  console.log('Token novo gravado em ' + CONFIG_FILE + '. Pareie os aparelhos de novo.');
+  process.exit(0);
+}
 
 function resolveAgy() {
   if (process.env.AGY_PATH) return process.env.AGY_PATH;
@@ -54,9 +66,10 @@ function resolveAgy() {
 }
 const AGY = resolveAgy();
 
-// Código de pareamento: muda a cada vez que o servidor inicia.
-const pairCode = String(crypto.randomInt(100000, 999999));
-const pairAttempts = [];
+// Código de pareamento: muda a cada vez que o servidor inicia e depois de cada pareamento.
+const newPairCode = () => String(crypto.randomInt(100000, 999999));
+let pairCode = newPairCode();
+const allowPairAttempt = createPairLimiter();
 
 // ---------- store (conversas compartilhadas entre PC e celular) ----------
 const store = loadJson(STORE_FILE, { conversations: {} });
@@ -923,13 +936,17 @@ function rememberWorkspace(dir) {
   saveJson(CONFIG_FILE, config);
 }
 
-// ---------- transcrição de áudio (Whisper local do Zap IA + ffmpeg, tudo no PC) ----------
+// ---------- transcrição de áudio (Whisper local + ffmpeg, tudo no PC) ----------
 function findExe(cands) { for (const c of cands) { try { if (c && fs.existsSync(c)) return c; } catch {} } return null; }
 function whereExe(name) { try { return execFileSync('where', [name], { encoding: 'utf8', windowsHide: true }).split(/\r?\n/)[0].trim(); } catch { return null; } }
 const APPDATA = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
+// Onde procurar o Whisper: AGY_REMOTE_WHISPER_DIR, "whisperDir" no config.json ou a pasta do próprio Agy Remote.
+// Não procuramos em pastas de outros apps, porque o executável encontrado é executado.
+function whisperDirs() {
+  return [process.env.AGY_REMOTE_WHISPER_DIR, config.whisperDir, path.join(APPDATA, 'Agy Remote', 'whisper')].filter(Boolean);
+}
 function whisperPaths() {
-  for (const app of ['Zap IA', 'Suporte IA', 'Agy Remote']) {
-    const dir = path.join(APPDATA, app, 'whisper');
+  for (const dir of whisperDirs()) {
     const exe = findExe([path.join(dir, 'bin', 'Release', 'whisper-cli.exe'), path.join(dir, 'bin', 'whisper-cli.exe')]);
     const model = findExe([path.join(dir, 'ggml-small-q5_1.bin')]);
     if (exe && model) return { exe, model };
@@ -944,7 +961,7 @@ function run(exe, args, timeout) {
 }
 async function transcribe(buf, ext) {
   const w = whisperPaths(), ff = ffmpegPath();
-  if (!w) throw new Error('Transcrição não instalada (Whisper do Zap IA não encontrado).');
+  if (!w) throw new Error('Transcrição não instalada (Whisper não encontrado).');
   if (!ff) throw new Error('ffmpeg não encontrado no PC.');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-audio-'));
   try {
@@ -1408,6 +1425,7 @@ function authed(req) {
 }
 function lanAddresses() {
   const out = [];
+  if (!LAN) return out; // sem acesso pela rede, não há endereço para o celular
   for (const [name, list] of Object.entries(os.networkInterfaces())) {
     for (const i of list || []) {
       if (i.family === 'IPv4' && !i.internal) {
@@ -1425,17 +1443,15 @@ async function api(req, res, url) {
   const p = url.pathname;
 
   if (p === '/api/pair' && req.method === 'POST') {
-    const now = Date.now();
-    while (pairAttempts.length && now - pairAttempts[0] > 10 * 60 * 1000) pairAttempts.shift();
-    if (pairAttempts.length >= 10) return send(res, 429, { error: 'Muitas tentativas. Espere alguns minutos.' });
-    pairAttempts.push(now);
+    if (!allowPairAttempt(req.socket.remoteAddress || '')) return send(res, 429, { error: 'Muitas tentativas. Espere alguns minutos.' });
     const body = await readBody(req);
     if (String(body.code || '').trim() !== pairCode) return send(res, 403, { error: 'Código incorreto.' });
+    rotatePairCode(); // cada código vale para um único pareamento
     return send(res, 200, { token: config.token });
   }
   if (p === '/api/local-token') {
     if (!isLocalRequest(req)) return send(res, 403, { error: 'Só no próprio PC.' });
-    return send(res, 200, { token: config.token, pairCode, addresses: lanAddresses(), port: config.port });
+    return send(res, 200, { token: config.token, pairCode, addresses: lanAddresses(), port: config.port, lan: LAN });
   }
   if (!authed(req)) return send(res, 401, { error: 'Não autorizado. Pareie o dispositivo.' });
 
@@ -1739,8 +1755,11 @@ async function api(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, 'http://x');
   try {
+    const host = req.headers.host;
+    if (!isTrustedHost(host, os.hostname(), config.allowedHosts)) return send(res, 403, { error: 'Endereço não permitido. Use o IP do PC ou inclua o nome em "allowedHosts" no config.json.' });
+    const url = new URL(req.url, 'http://x');
+    if (url.pathname.startsWith('/api/') && !isSameOrigin(req.headers.origin, host)) return send(res, 403, { error: 'Origem não permitida.' });
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     if (url.pathname === '/AgyRemote.apk') {
       const apk = process.env.AGY_REMOTE_APK || path.join(ROOT, '..', 'AgyRemote.apk');
@@ -1759,10 +1778,25 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+function rotatePairCode() {
+  pairCode = newPairCode();
+  console.log(`  Novo código de pareamento: ${pairCode}`);
+  events.emit('pair-code');
+}
+// Revoga o acesso de todos os aparelhos: token novo, código novo e conexões abertas derrubadas.
+function regenerateToken() {
+  config.token = newToken();
+  saveJson(CONFIG_FILE, config);
+  listeners.clear();
+  for (const r of runs.values()) r.listeners.clear();
+  server.closeAllConnections();
+  rotatePairCode();
+}
 function activeRuns() { let n = 0; for (const r of runs.values()) if (!r.done) n++; return n; }
 module.exports = {
   events,
-  info: () => ({ port: config.port, pairCode, token: config.token, addresses: lanAddresses(), agy: AGY, host: os.hostname(), dataDir: DATA, activeRuns: activeRuns() }),
+  regenerateToken,
+  info: () => ({ port: config.port, lan: LAN, configFile: CONFIG_FILE, pairCode, token: config.token, addresses: lanAddresses(), agy: AGY, host: os.hostname(), dataDir: DATA, activeRuns: activeRuns() }),
   usage: usageReport,
   missions: () => agentOS.list(),
   close: () => new Promise((r) => server.close(() => r())),
@@ -1773,12 +1807,14 @@ server.on('error', (err) => {
   if (require.main === module) { console.error('Erro no servidor:', err.message); process.exit(1); }
 });
 
-server.listen(config.port, '0.0.0.0', () => {
+server.listen(config.port, LAN ? '0.0.0.0' : '127.0.0.1', () => {
   events.emit('ready');
   console.log('\n  Agy Remote rodando');
   console.log('  ------------------');
   console.log(`  No PC:       http://localhost:${config.port}`);
   for (const a of lanAddresses()) console.log(`  No celular:  http://${a.ip}:${config.port}   (${a.tailscale ? 'Tailscale' : a.name})`);
+  if (LAN) console.warn('\n  ATENÇÃO: acesso pela rede LIGADO, em HTTP sem criptografia. Quem tiver o token controla este PC.\n  Use só em rede de confiança ou pelo Tailscale. Nunca exponha a porta na internet.');
+  else console.log(`  No celular:  desligado. Para ligar, use "lan": true em ${CONFIG_FILE} (ou AGY_REMOTE_LAN=1) e reinicie.`);
   console.log(`\n  Código de pareamento: ${pairCode}`);
   console.log(`  agy: ${AGY}\n`);
 });

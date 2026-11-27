@@ -86,7 +86,7 @@ module.exports = function createAutomations(d) {
     try {
       if (!fs.existsSync(a.cwd)) throw new Error('Pasta não existe: ' + a.cwd);
       if (a.kind === 'mission') {
-        const m = await agentOS.start({ goal: a.goal, cwd: a.cwd, engines: a.engines, lead: a.lead, cheap: a.cheap !== false, skip: a.skip !== false,
+        const m = await agentOS.start({ goal: a.goal, cwd: a.cwd, engines: a.engines, lead: a.lead, cheap: a.cheap !== false, skip: a.skip === true,
           verify: a.verify !== false, parallel: a.parallel || 2, title: '⏰ ' + a.name, isolate: a.isolate, maxTokens: a.maxTokens, automationId: a.id, device: 'automacao' });
         entry.missionId = m.id; entry.state = m.state;
         running.delete(a.id); // a partir daqui "rodando" vem do estado da missão
@@ -94,7 +94,7 @@ module.exports = function createAutomations(d) {
         const engine = pickEngine(a);
         if (!engine) throw new Error('Nenhuma IA ligada e instalada.');
         const model = a.cheap !== false && ENGINES[engine] && ENGINES[engine].cheap ? ENGINES[engine].cheap : undefined;
-        const r = startRun({ prompt: a.goal, cwd: a.cwd, engine, model, mode: a.skip !== false ? undefined : 'edit', skipPermissions: a.skip !== false,
+        const r = startRun({ prompt: a.goal, cwd: a.cwd, engine, model, mode: a.skip === true ? undefined : 'edit', skipPermissions: a.skip === true,
           device: 'automacao', title: '⏰ ' + a.name, label: '⏰ ' + a.name });
         entry.convId = r.convId; entry.engine = engine;
         const c = store.conversations[r.convId]; if (c) c.automationId = a.id;
@@ -169,7 +169,7 @@ module.exports = function createAutomations(d) {
     if (b.engines !== undefined) o.engines = (Array.isArray(b.engines) ? b.engines : []).filter((e) => ENGINES[e]);
     if (b.lead !== undefined) o.lead = ENGINES[b.lead] ? b.lead : null;
     for (const k of ['cheap', 'skip', 'verify', 'isolate']) if (b[k] !== undefined) o[k] = !!b[k];
-    if (!prev) { if (o.cheap === undefined) o.cheap = true; if (o.skip === undefined) o.skip = true; }
+    if (!prev) { if (o.cheap === undefined) o.cheap = true; if (o.skip === undefined) o.skip = false; }
     if (b.maxTokens !== undefined) o.maxTokens = Math.max(0, Math.round(Number(b.maxTokens) || 0)) || undefined;
     if (b.parallel !== undefined) o.parallel = Math.max(1, Math.min(4, Number(b.parallel) || 2));
     if (b.schedule !== undefined || !prev) o.schedule = cleanSchedule(b.schedule);

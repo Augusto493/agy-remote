@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.media.MediaRecorder;
 import android.net.Uri;
@@ -64,11 +65,18 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri u = req.getUrl();
-                String server = prefs.getString(KEY_URL, "");
-                String scheme = u.getScheme() == null ? "" : u.getScheme();
-                if (scheme.equals("file") || (!server.isEmpty() && u.toString().startsWith(server))) return false;
+                if (isTrusted(u)) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch (Exception ignored) {}
                 return true;
+            }
+
+            // shouldOverrideUrlLoading não cobre toda navegação (ex.: POST); barra o resto aqui
+            @Override
+            public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                if (!url.equals("about:blank") && !isTrusted(Uri.parse(url))) {
+                    view.stopLoading();
+                    showSetup("Endereço bloqueado: não é o servidor configurado.");
+                }
             }
 
             @Override
@@ -101,6 +109,26 @@ public class MainActivity extends Activity {
 
     private static String jsStr(String s) {
         return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'";
+    }
+
+    /** Só as páginas do próprio app e do servidor configurado (esquema, host e porta idênticos). */
+    private boolean isTrusted(Uri u) {
+        if ("file".equals(u.getScheme()))
+            return u.toString().startsWith("file:///android_asset/") && !u.getPathSegments().contains("..");
+        String server = prefs.getString(KEY_URL, "");
+        if (server.isEmpty()) return false;
+        Uri s = Uri.parse(server);
+        String scheme = u.getScheme(), host = u.getHost();
+        return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))
+                && scheme.equalsIgnoreCase(s.getScheme())
+                && host != null && host.equalsIgnoreCase(s.getHost())
+                && u.getEncodedUserInfo() == null
+                && effectivePort(u) == effectivePort(s);
+    }
+
+    private static int effectivePort(Uri u) {
+        if (u.getPort() != -1) return u.getPort();
+        return "https".equalsIgnoreCase(u.getScheme()) ? 443 : 80;
     }
 
     private void showSetup(String error) {

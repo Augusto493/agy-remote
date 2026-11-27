@@ -1101,7 +1101,7 @@ function quotaLeft(engineId, model) {
   return null;
 }
 const MODES = [
-  { id: 'accept-edits', icon: '✏️', name: 'Editar arquivos', short: 'Editar', desc: 'Lê e edita arquivos. Comandos de terminal pedem liberação.' },
+  { id: 'accept-edits', icon: '✏️', name: 'Editar arquivos', short: 'Editar', desc: 'Lê e edita arquivos. O bloqueio do terminal depende da IA (o Codex no Windows roda sem sandbox).' },
   { id: 'plan', icon: '📋', name: 'Só planejar', short: 'Planejar', desc: 'Analisa e propõe um plano, sem mudar nada.' },
   { id: 'auto', icon: '⚡', name: 'Automático', short: 'Auto', desc: 'O agy decide o que precisa de revisão.' },
   { id: 'skip', icon: '🔓', name: 'Liberar tudo', short: 'Liberado', desc: 'Executa qualquer comando sem perguntar. Use com cuidado.' },
@@ -1531,7 +1531,7 @@ function renderConv() {
     const recent = c ? [] : state.conversations.filter((x) => x.status !== 'bloqueado' && !x.missionId).slice(0, 4);
     const ok = usableEngines();
     wrap.innerHTML = `<div class="hero2">
-      <h2>${c ? 'Continue de onde parou' : `${saudacao()}, <span class="nm">${esc(LS.get('nome', 'Augusto'))}</span>`}</h2>
+      <h2>${c ? 'Continue de onde parou' : `${saudacao()}, <span class="nm">${esc(LS.get('nome', 'Usuário'))}</span>`}</h2>
       <p class="sub2">${ok.length || state.engines.length ? `<b>${ok.length}</b> ${ok.length === 1 ? 'IA online' : 'IAs online'}` : 'Conectando às IAs'} no ${state.info ? 'PC <b>' + esc(state.info.host) + '</b>' : 'seu PC'} · pasta <b>${esc(base(c ? c.cwd : state.cwd))}</b>. O que vamos construir hoje?</p>
       ${pend.length ? `<div class="pend">${pend.map((p) => `<button data-pend="${p.id}"><span class="ic">⚠️</span><span class="tx"><b>${esc(p.title)}</b><span>A IA quis usar ${esc(p.denied.join(', '))} e está esperando você</span></span><span class="go">Liberar e continuar</span></button>`).join('')}</div>` : ''}
       <div class="hcomp" id="hcomp"></div>
@@ -2527,15 +2527,16 @@ async function renderSettings() {
   const a0 = addrs[0], ts = addrs.find((a) => a.tailscale);
   const cp = (v) => `<div class="copy"><span class="mono">${esc(v)}</span><button class="btn sm" data-cp="${esc(v)}">Copiar</button></div>`;
   el.innerHTML = `<div class="phead"><div class="phd"><h1>Ajustes</h1><div class="psub">${usableEngines().length} de ${state.engines.length || 4} IAs ligadas • ${(info.workspaces || []).length} pastas recentes</div></div><button class="cta" id="addWsTop"><svg width="15" height="15"><use href="#i-plus"/></svg>Adicionar pasta</button></div>
-    ${local ? `<div class="cardx"><h3>📱 Conectar o celular</h3>
+    ${local && !local.lan ? `<div class="cardx"><h3>📱 Conectar o celular</h3><p class="muted" style="margin:0">O acesso pelo celular está desligado. Para ligar, coloque <span class="mono">"lan": true</span> no <span class="mono">config.json</span> da pasta de dados (ou defina <span class="mono">AGY_REMOTE_LAN=1</span>) e reinicie o Agy Remote. A conexão é HTTP sem criptografia: use só em rede de confiança ou pelo Tailscale.</p></div>` : ''}
+    ${local && local.lan ? `<div class="cardx"><h3>📱 Conectar o celular</h3>
       <ol class="steps-n">
-        <li><div style="flex:1;min-width:0">No celular, abra no navegador e instale o app:${a0 ? cp(`http://${a0.ip}:${port}/AgyRemote.apk`) : ''}</div></li>
+        <li><div style="flex:1;min-width:0">Instale no celular o app Android (compilado da pasta android/). Se o PC tiver o AgyRemote.apk, ele é baixado em:${a0 ? cp(`http://${a0.ip}:${port}/AgyRemote.apk`) : ''}</div></li>
         <li><div style="flex:1;min-width:0">No app, digite o endereço:${a0 ? cp(`${a0.ip}:${port}`) : ''}</div></li>
         <li>Digite o código abaixo.</li></ol>
       <div class="code-big num">${local.pairCode}</div>
-      <p class="muted" style="font-size:12.5px;margin:10px 0 0">O código muda sempre que o Agy Remote reinicia. Aparelhos já pareados continuam conectados.${ts ? '' : ' Fora de casa: instale o Tailscale no PC e no celular e use o IP 100.x.'}</p></div>` : ''}
+      <p class="muted" style="font-size:12.5px;margin:10px 0 0">O código muda a cada pareamento e quando o Agy Remote reinicia (reabra esta tela para ver o atual). Aparelhos já pareados continuam conectados.${ts ? '' : ' Fora de casa: instale o Tailscale no PC e no celular e use o IP 100.x.'}</p></div>` : ''}
     <div class="cardx"><h3>🎨 Aparência</h3><div class="seg" id="sTema" style="margin:0"><button data-t="claro">☀️ Claro</button><button data-t="escuro">🌙 Escuro</button><button data-t="sistema">🖥️ Sistema</button></div>
-      <div class="kv" style="margin-top:10px"><span>Seu nome (saudação da tela inicial)</span><input id="sNome" value="${esc(LS.get('nome', 'Augusto'))}" style="max-width:200px" aria-label="Seu nome"></div></div>
+      <div class="kv" style="margin-top:10px"><span>Seu nome (saudação da tela inicial)</span><input id="sNome" value="${esc(LS.get('nome', 'Usuário'))}" style="max-width:200px" aria-label="Seu nome"></div></div>
     <div class="cardx" id="engCard"><h3>🤖 IAs</h3><div class="empty" style="padding:20px">Carregando…</div></div>
     <div class="cardx" id="intCard"><h3>🔌 Integrações (MCP)</h3><p class="muted" style="margin:0;font-size:12.5px">Servidores MCP configurados em cada IA. Só leitura: para mudar, edite o arquivo de configuração da própria IA.</p><div id="intBody"><div class="empty" style="padding:16px"><span class="spin" style="display:inline-block"></span></div></div></div>
     <div class="cardx"><h3>🔔 Notificações e voz</h3>
@@ -2557,7 +2558,7 @@ async function renderSettings() {
   $('#sAuto', el).onclick = () => { LS.set('autoSendVoice', !LS.get('autoSendVoice', false)); renderSettings(); };
   $('#sModel', el).onclick = () => folhaModelo(renderSettings);
   $('#sMode', el).onclick = () => folhaModo(renderSettings);
-  $('#sNome', el).onchange = (e) => { LS.set('nome', e.target.value.trim() || 'Augusto'); toast('Nome salvo'); };
+  $('#sNome', el).onchange = (e) => { LS.set('nome', e.target.value.trim() || 'Usuário'); toast('Nome salvo'); };
   $('#addWsTop', el).onclick = () => $('#addWs', el).click();
   $('#addWs', el).onclick = () => pickFolder(async () => { state.info = await api('/api/info'); renderSettings(); });
   $$('[data-del]', el).forEach((b) => b.onclick = async () => { const d = await api('/api/workspaces', { method: 'DELETE', body: { path: b.dataset.del } }); state.info.workspaces = d.workspaces; renderSettings(); });
